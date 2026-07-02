@@ -23,6 +23,7 @@ input:checked+.slider:before{transform:translateX(24px);}
 #login h2{margin-bottom:16px;}
 #login input{padding:12px;font-size:16px;border:1px solid #ccc;border-radius:8px;width:200px;margin-bottom:12px;}
 #login button{padding:12px 32px;background:#1a73e8;color:#fff;border:none;border-radius:8px;font-size:16px;cursor:pointer;}
+#login button:disabled{background:#9bb8e8;cursor:default;}
 .err{color:#e53935;font-size:13px;margin-top:8px;min-height:18px;}
 #app{display:none;}
 </style>
@@ -32,7 +33,7 @@ input:checked+.slider:before{transform:translateX(24px);}
 <div id="login">
   <h2>🚌 Вхід</h2>
   <input type="password" id="pwd" placeholder="Пароль" onkeydown="if(event.key==='Enter')check()">
-  <button onclick="check()">Увійти</button>
+  <button id="loginBtn" onclick="check()">Увійти</button>
   <div class="err" id="err"></div>
 </div>
 
@@ -44,50 +45,66 @@ input:checked+.slider:before{transform:translateX(24px);}
 </div>
 
 <script>
-var PWD = "disp2024";
-var BASE = "https://script.google.com/macros/s/AKfycby7pwCCOTQrv4KtKtd3w_VvHXbJ6PfSfkV8YrJnf0Rb1WkGRVQjomd_LHhjB6ejBNTbJQ/exec";
+// Публічний URL вебдодатку Apps Script (сам по собі більше не є секретом,
+// оскільки backend тепер вимагає токен на кожен запит).
+var BASE = "https://script.google.com/macros/s/AKfycbxVhalGCwkQontAOBbgI4uU39Ce58JoXFrOt7yccl65qSC4HsxC2bkYYxN4odRjCJWWfA/exec";
+
 var routes = [];
+var token = sessionStorage.getItem("єфіваідваєліваівжваолфівлджаоіапощкелцкпьаи65вапіва4545") || "";
+
+window.addEventListener("DOMContentLoaded", function () {
+  if (token) {
+    // Токен уже підтверджувався в цій вкладці браузера цього сеансу — не
+    // просимо пароль повторно, але все одно перевіряємо його на сервері.
+    authenticate(token, true);
+  }
+});
 
 function check() {
-  if (document.getElementById("pwd").value === PWD) {
-    document.getElementById("login").style.display = "none";
-    document.getElementById("app").style.display = "block";
-    loadRoutes();
-  } else {
-    document.getElementById("err").innerText = "Невірний пароль";
-  }
+  var val = document.getElementById("pwd").value;
+  if (!val) return;
+  authenticate(val, false);
 }
 
-function loadRoutes() {
-  document.getElementById("list").innerText = "Завантаження...";
-  fetch(BASE)
-    .then(r => {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.text();
-    })
-    .then(text => {
-      var d;
-      try {
-        d = JSON.parse(text);
-      } catch (e) {
-        throw new Error("Не JSON, отримано: " + text.slice(0, 200));
+function authenticate(candidate, silent) {
+  var btn = document.getElementById("loginBtn");
+  var errEl = document.getElementById("err");
+  if (btn) btn.disabled = true;
+  if (!silent) errEl.innerText = "Перевірка...";
+
+  fetch(BASE + "?token=" + encodeURIComponent(candidate))
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (btn) btn.disabled = false;
+      if (d.error === "unauthorized") {
+        sessionStorage.removeItem("appToken");
+        if (!silent) errEl.innerText = "Невірний пароль";
+        return;
       }
-      if (!d.routes) throw new Error("Немає поля routes: " + text.slice(0, 200));
-      routes = d.routes;
-      var html = "";
-      routes.forEach(function(r, i) {
-        html += '<div class="row">' +
-          '<span class="num">№' + r.num + '</span>' +
-          '<span class="status-text" id="st' + i + '">' + (r.status === "green" ? "На маршруті" : "Не на маршруті") + '</span>' +
-          '<label class="toggle"><input type="checkbox" id="cb' + i + '" ' + (r.status === "green" ? "checked" : "") + ' onchange="upd(' + i + ')">' +
-          '<span class="slider"></span></label></div>';
-      });
-      document.getElementById("list").innerHTML = html;
+      token = candidate;
+      sessionStorage.setItem("appToken", token);
+      document.getElementById("login").style.display = "none";
+      document.getElementById("app").style.display = "block";
+      renderRoutes(d.routes || []);
     })
-    .catch(err => {
-      document.getElementById("list").innerText = "❌ Помилка завантаження: " + err.message;
+    .catch(function (err) {
+      if (btn) btn.disabled = false;
+      if (!silent) errEl.innerText = "Помилка з'єднання";
       console.error(err);
     });
+}
+
+function renderRoutes(list) {
+  routes = list;
+  var html = "";
+  routes.forEach(function (r, i) {
+    html += '<div class="row">' +
+      '<span class="num">№' + r.num + '</span>' +
+      '<span class="status-text" id="st' + i + '">' + (r.status === "green" ? "На маршруті" : "Не на маршруті") + '</span>' +
+      '<label class="toggle"><input type="checkbox" id="cb' + i + '" ' + (r.status === "green" ? "checked" : "") + ' onchange="upd(' + i + ')">' +
+      '<span class="slider"></span></label></div>';
+  });
+  document.getElementById("list").innerHTML = html || "Немає маршрутів";
 }
 
 function upd(i) {
@@ -100,16 +117,23 @@ function sendAll() {
   document.getElementById("msg").innerText = "Надсилаємо...";
   fetch(BASE, {
     method: "POST",
-    body: JSON.stringify({action: "send", routes: routes}),
-    headers: {"Content-Type": "text/plain"}
+    body: JSON.stringify({ action: "send", routes: routes, token: token }),
+    headers: { "Content-Type": "text/plain" }
   })
-  .then(r => r.json())
-  .then(function() {
-    document.getElementById("msg").innerText = "✅ Надіслано в Telegram";
-  })
-  .catch(function() {
-    document.getElementById("msg").innerText = "❌ Помилка";
-  });
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d.error === "unauthorized") {
+        sessionStorage.removeItem("appToken");
+        document.getElementById("msg").innerText = "❌ Сеанс недійсний, увійдіть знову";
+        document.getElementById("app").style.display = "none";
+        document.getElementById("login").style.display = "flex";
+        return;
+      }
+      document.getElementById("msg").innerText = "✅ Надіслано в Telegram";
+    })
+    .catch(function () {
+      document.getElementById("msg").innerText = "❌ Помилка";
+    });
 }
 </script>
 </body>
