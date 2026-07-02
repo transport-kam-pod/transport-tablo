@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Комунальний транспорт</title>
+<style>
+body{margin:0;padding:16px;font-family:sans-serif;background:#f5f5f5;}
+h2{font-size:16px;margin:0 0 16px;color:#333;}
+.row{display:flex;align-items:center;justify-content:space-between;background:#fff;border-radius:8px;padding:12px 16px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1);}
+.num{font-size:18px;font-weight:bold;color:#333;min-width:70px;}
+.toggle{position:relative;width:52px;height:28px;flex-shrink:0;}
+.toggle input{opacity:0;width:0;height:0;}
+.slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#ef4444;border-radius:28px;transition:.3s;}
+.slider:before{position:absolute;content:"";height:22px;width:22px;left:3px;bottom:3px;background:white;border-radius:50%;transition:.3s;}
+input:checked+.slider{background:#22c55e;}
+input:checked+.slider:before{transform:translateX(24px);}
+.btn{width:100%;padding:16px;background:#1a73e8;color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:bold;margin-top:16px;cursor:pointer;}
+.btn:active{background:#1557b0;}
+.status-text{font-size:13px;color:#888;min-width:90px;text-align:right;}
+#msg{text-align:center;margin-top:12px;font-size:14px;color:#1a73e8;min-height:20px;}
+#login{position:fixed;top:0;left:0;right:0;bottom:0;background:#f5f5f5;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;}
+#login h2{margin-bottom:16px;}
+#login input{padding:12px;font-size:16px;border:1px solid #ccc;border-radius:8px;width:200px;margin-bottom:12px;}
+#login button{padding:12px 32px;background:#1a73e8;color:#fff;border:none;border-radius:8px;font-size:16px;cursor:pointer;}
+.err{color:#e53935;font-size:13px;margin-top:8px;min-height:18px;}
+#app{display:none;}
+</style>
+</head>
+<body>
+
+<div id="login">
+  <h2>🚌 Вхід</h2>
+  <input type="password" id="pwd" placeholder="Пароль" onkeydown="if(event.key==='Enter')check()">
+  <button onclick="check()">Увійти</button>
+  <div class="err" id="err"></div>
+</div>
+
+<div id="app">
+  <h2>🚌 Комунальний транспорт</h2>
+  <div id="list">Завантаження...</div>
+  <button class="btn" onclick="sendAll()">📤 Надіслати в Telegram</button>
+  <div id="msg"></div>
+</div>
+
+<script>
+var PWD = "disp2024";
+var BASE = "https://script.google.com/macros/s/AKfycbx6QTfuCEvZyCt0KuQjkkNMTPxOtpGjW2Z7mHzJ57w96z1BOZXZjylhMJAX684fC9UnaA/exec";
+var routes = [];
+
+function check() {
+  if (document.getElementById("pwd").value === PWD) {
+    document.getElementById("login").style.display = "none";
+    document.getElementById("app").style.display = "block";
+    loadRoutes();
+  } else {
+    document.getElementById("err").innerText = "Невірний пароль";
+  }
+}
+
+function loadRoutes() {
+  fetch(BASE)
+    .then(r => r.json())
+    .then(d => {
+      routes = d.routes;
+      var html = "";
+      routes.forEach(function(r, i) {
+        html += '<div class="row">' +
+          '<span class="num">№' + r.num + '</span>' +
+          '<span class="status-text" id="st' + i + '">' + (r.status === "green" ? "На маршруті" : "Не на маршруті") + '</span>' +
+          '<label class="toggle"><input type="checkbox" id="cb' + i + '" ' + (r.status === "green" ? "checked" : "") + ' onchange="upd(' + i + ')">' +
+          '<span class="slider"></span></label></div>';
+      });
+      document.getElementById("list").innerHTML = html;
+    });
+}
+
+function upd(i) {
+  var cb = document.getElementById("cb" + i);
+  routes[i].status = cb.checked ? "green" : "red";
+  document.getElementById("st" + i).innerText = cb.checked ? "На маршруті" : "Не на маршруті";
+}
+
+function sendAll() {
+  document.getElementById("msg").innerText = "Надсилаємо...";
+  fetch(BASE, {
+    method: "POST",
+    body: JSON.stringify({action: "send", routes: routes}),
+    headers: {"Content-Type": "text/plain"}
+  })
+  .then(r => r.json())
+  .then(function() {
+    document.getElementById("msg").innerText = "✅ Надіслано в Telegram";
+  })
+  .catch(function() {
+    document.getElementById("msg").innerText = "❌ Помилка";
+  });
+}
+</script>
+</body>
+</html>
